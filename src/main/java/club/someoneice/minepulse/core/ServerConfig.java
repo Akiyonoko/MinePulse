@@ -1,184 +1,157 @@
 package club.someoneice.minepulse.core;
 
-import club.someoneice.json.JSON;
-import club.someoneice.json.node.*;
-import club.someoneice.json.processor.JsonBuilder;
-import com.google.common.collect.Sets;
-import net.fabricmc.loader.api.FabricLoader;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
+import net.neoforged.fml.loading.FMLPaths;
+import org.slf4j.Logger;
 
-import java.io.File;
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.List;
+import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
+/**
+ * 服务端配置：config/minepulse_common.json
+ * 由各条规则组成：一条规则可以是单个标签/方块，也可以是"标签 + 方块"的组合。
+ */
 public final class ServerConfig {
-    public static final Set<OreMark> ORE_MARKS = Sets.newHashSet();
-    public static final Set<OreMark> TREE_MARKS = Sets.newHashSet();
+    private static final Logger LOGGER = LogUtils.getLogger();
 
-    public static int maxSizeCache = 1024;
+    public static final Set<OreMark> ORE_MARKS = new LinkedHashSet<>();
+    public static final Set<OreMark> TREE_MARKS = new LinkedHashSet<>();
 
-    public static void read() throws IOException {
-        final File file = new File(FabricLoader.getInstance().getConfigDir().toFile(), "minepulse_common.json");
-        checkFile(file);
+    /** -1 表示不限制；否则一条脉最多扫这么多块。 */
+    public static int MAX_SIZE_CACHE = 1024;
 
-        MapNode node = JSON.json.parse(file).asMapNodeOrEmpty();
-        ArrayNode ores = node.get("ores").asArrayNodeOrEmpty();
-        ArrayNode trees = node.get("trees").asArrayNodeOrEmpty();
+    /** true = 3×3×3 全方向（含斜角）；false = 退回原版手感（矿石只认 6 个正方向）。 */
+    public static boolean DIAGONAL = true;
 
-        foreach(ores, ORE_MARKS);
-        foreach(trees, TREE_MARKS);
-        maxSizeCache = node.has("maxSizeCache")
-                ? (int) node.get("maxSizeCache").getObj()
-                : maxSizeCache;
+    private static final String FILE_NAME = "minepulse_common.json";
+
+    private static final String DEFAULT_JSON = """
+            {
+              "ores": [
+                "#minecraft:coal_ores",
+                ["#minecraft:copper_ores", "#c:storage_blocks/raw_copper"],
+                ["#minecraft:iron_ores", "#c:storage_blocks/raw_iron"],
+                ["#minecraft:gold_ores", "#c:storage_blocks/raw_gold"],
+                "#minecraft:redstone_ores",
+                "#minecraft:diamond_ores",
+                "#minecraft:emerald_ores",
+                "#minecraft:lapis_ores",
+                "#minecraft:nether_quartz_ore",
+                "#minecraft:ancient_debris",
+                "#c:ores/netherite_scrap",
+                ["#c:ores/bauxite", "#c:ores/cinnabar", "#c:ores/galena", "#c:ores/iridium",
+                 "#c:ores/lead", "#c:ores/peridot", "#c:ores/pyrite", "#c:ores/ruby",
+                 "#c:ores/sapphire", "#c:ores/sheldonite", "#c:ores/silver", "#c:ores/sodalite",
+                 "#c:ores/sphalerite", "#c:ores/tin", "#c:ores/tungsten"],
+                ["#c:desh_ores", "#c:storage_blocks/raw_desh"],
+                ["#c:ice_shard_ores", "#c:ostrum_ores", "#c:calorite_ores"],
+                ["minecraft:mushroom_stem", "minecraft:red_mushroom_block", "minecraft:brown_mushroom_block"]
+              ],
+              "trees": [
+                "#minecraft:logs"
+              ],
+              "maxSizeCache": 1024,
+              "diagonal": true
+            }
+            """;
+
+    private ServerConfig() {
     }
 
-    private static void write(File file) throws IOException {
-        // JsonArray array = new JsonArray();
-
-        ArrayNode node = new ArrayNode();
-        node.add(to("#minecraft:coal_ores"));
-        node.add(new ArrayNode(List.of(to("#minecraft:copper_ores"), to("#c:storage_blocks/raw_copper"))));
-        node.add(new ArrayNode(List.of(to("#minecraft:iron_ores"), to("#c:storage_blocks/raw_iron"))));
-        node.add(new ArrayNode(List.of(to("#minecraft:gold_ores"), to("#c:storage_blocks/raw_gold"))));
-
-        node.add(to("#minecraft:redstone_ores"));
-        node.add(to("#minecraft:diamond_ores"));
-        node.add(to("#minecraft:emerald_ores"));
-        node.add(to("#minecraft:lapis_ores"));
-        node.add(to("#minecraft:nether_quartz_ore"));
-        node.add(to("#minecraft:ancient_debris"));
-
-        node.add(to("#c:ores/netherite_scrap"));
-
-        node.add(new ArrayNode(List.of(
-                to("minecraft:mushroom_stem"),
-                to("minecraft:red_mushroom_block"),
-                to("minecraft:brown_mushroom_block")
-        )));
-
-        ArrayNode treeNode = new ArrayNode(List.of(
-                to("#minecraft:logs")
-        ));
-
-        /* Mods */
-
-        node.add(to("#c:ores/bauxite"));
-        node.add(to("#c:ores/cinnabar"));
-        node.add(to("#c:ores/galena"));
-        node.add(to("#c:ores/iridium"));
-        node.add(to("#c:ores/lead"));
-        node.add(to("#c:ores/peridot"));
-        node.add(to("#c:ores/pyrite"));
-        node.add(to("#c:ores/ruby"));
-        node.add(to("#c:ores/sapphire"));
-        node.add(to("#c:ores/sheldonite"));
-        node.add(to("#c:ores/silver"));
-        node.add(to("#c:ores/sodalite"));
-        node.add(to("#c:ores/sphalerite"));
-        node.add(to("#c:ores/tin"));
-        node.add(to("#c:ores/tungsten"));
-
-        node.add(to("#c:desh_ores"));
-        node.add(to("#c:storage_blocks/raw_desh"));
-        node.add(to("#c:ice_shard_ores"));
-        node.add(to("#c:ostrum_ores"));
-        node.add(to("#c:calorite_ores"));
-
-        if (FabricLoader.getInstance().isModLoaded("create")) {
-            node.addAll(List.of(
-                    to("#c:zinc_ores"),
-                    to("#c:storage_blocks/raw_zinc")
-            ));
+    public static void read() {
+        Path file = FMLPaths.CONFIGDIR.get().resolve(FILE_NAME);
+        String json = DEFAULT_JSON;
+        try {
+            if (!Files.exists(file)) {
+                Files.createDirectories(file.getParent());
+                Files.writeString(file, DEFAULT_JSON, StandardCharsets.UTF_8);
+            } else {
+                json = Files.readString(file, StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            LOGGER.error("[minepulse] 读取 {} 失败，使用内置默认配置", FILE_NAME, e);
         }
-
-        if (FabricLoader.getInstance().isModLoaded("ad_astra")) {
-            node.add(to("ad_astra:moon_cheese_ore"));
-        }
-
-        if (FabricLoader.getInstance().isModLoaded("anvilcraft")) {
-            node.addAll(List.of(
-                    to("#c:tin_ores"),
-                    to("#c:titanium_ores"),
-                    to("#c:tungsten_ores"),
-                    to("#c:lead_ores"),
-                    to("#c:silver_ores"),
-                    to("#c:uranium_ores"),
-                    to("anvilcraft:void_stone"),
-                    to("anvilcraft:earth_core_shard_ore")
-            ));
-        }
-
-        if (FabricLoader.getInstance().isModLoaded("ae2")) {
-            node.add(to("#c:certus_quartz_ores"));
-        }
-
-        MapNode out = new MapNode();
-        out.put("ores", node);
-        out.put("trees", treeNode);
-        out.put("maxSizeCache", new IntegerNode(1024));
-
-        String data = JsonBuilder.prettyPrint(out);
-        Files.write(file.toPath(), data.getBytes());
+        apply(json);
     }
 
-    private static void checkFile(File file) throws IOException {
-        if (file.exists() && file.isFile()) {
+    private static void apply(String json) {
+        try {
+            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            Set<OreMark> ores = new LinkedHashSet<>();
+            Set<OreMark> trees = new LinkedHashSet<>();
+            readMarks(root.getAsJsonArray("ores"), ores);
+            readMarks(root.getAsJsonArray("trees"), trees);
+
+            ORE_MARKS.clear();
+            ORE_MARKS.addAll(ores);
+            TREE_MARKS.clear();
+            TREE_MARKS.addAll(trees);
+
+            if (root.has("maxSizeCache") && !root.get("maxSizeCache").isJsonNull()) {
+                MAX_SIZE_CACHE = root.get("maxSizeCache").getAsInt();
+            }
+            if (root.has("diagonal") && !root.get("diagonal").isJsonNull()) {
+                DIAGONAL = root.get("diagonal").getAsBoolean();
+            }
+        } catch (Exception e) {
+            LOGGER.error("[minepulse] 配置文件解析失败，使用内置默认配置", e);
+            if (ORE_MARKS.isEmpty()) {
+                ORE_MARKS.add(new OreMark(Set.of(tag("#minecraft:coal_ores"), tag("#minecraft:iron_ores"),
+                        tag("#minecraft:diamond_ores")), Set.of()));
+            }
+        }
+    }
+
+    private static void readMarks(JsonArray array, Set<OreMark> out) {
+        if (array == null) {
             return;
         }
-
-        if (!file.createNewFile()) {
-            throw new RuntimeException("Cannot create the config file!");
-        }
-
-        write(file);
-    }
-
-    private static void foreach(ArrayNode nodeArray, Set<OreMark> mark) {
-        for (JsonNode<?> node: nodeArray) {
-            mark.add(node.getType() == JsonNode.NodeType.String
-                    ? make((StringNode) node.asTypeNode())
-                    : make(node.asArrayNodeOrEmpty())
-            );
+        for (JsonElement element : array) {
+            out.add(parseMark(element));
         }
     }
 
-    private static OreMark make(ArrayNode node) {
-        Set<TagKey<Block>> tags = Sets.newHashSet();
-        Set<Block> blocks = Sets.newHashSet();
-        node.forEach(it -> {
-            String dat = it.toString();
-            if (dat.startsWith("#")) {
-                tags.add(createTag(dat));
-            } else {
-                blocks.add(createBlock(dat));
+    private static OreMark parseMark(JsonElement element) {
+        Set<TagKey<Block>> tags = new HashSet<>();
+        Set<Block> blocks = new HashSet<>();
+        if (element.isJsonArray()) {
+            for (JsonElement child : element.getAsJsonArray()) {
+                addEntry(child.getAsString(), tags, blocks);
             }
-        });
-
-        return new OreMark(tags, blocks);
+        } else {
+            addEntry(element.getAsString(), tags, blocks);
+        }
+        return new OreMark(Set.copyOf(tags), Set.copyOf(blocks));
     }
 
-    private static OreMark make(StringNode ore) {
-        String dat = ore.toString();
-        return dat.startsWith("#")
-                ? new OreMark(Set.of(createTag(dat)), Set.of())
-                : new OreMark(Set.of(), Set.of(createBlock(dat)));
+    private static void addEntry(String value, Set<TagKey<Block>> tags, Set<Block> blocks) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if (value.startsWith("#")) {
+            tags.add(tag(value));
+        } else {
+            Block block = BuiltInRegistries.BLOCK.get(ResourceLocation.tryParse(value));
+            if (block != null && block != net.minecraft.world.level.block.Blocks.AIR) {
+                blocks.add(block);
+            }
+        }
     }
 
-    private static TagKey<Block> createTag(String str) {
-        return TagKey.create(Registries.BLOCK, ResourceLocation.tryParse(str.substring(1)));
-    }
-
-    private static Block createBlock(String str) {
-        return BuiltInRegistries.BLOCK.getValue(ResourceLocation.tryParse(str));
-    }
-
-    private static StringNode to(String str) {
-        return new StringNode(str);
+    private static TagKey<Block> tag(String value) {
+        return TagKey.create(Registries.BLOCK, ResourceLocation.tryParse(value.substring(1)));
     }
 }

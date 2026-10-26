@@ -6,10 +6,10 @@
     "DropExperienceBlockMixin",
     "ServerPlayerGameModeMixin"
   ],
-  "injectors": {
-    "defaultRequire": 1
-  },
   "client": [
     "ClientPlayerGameModeMixin"
-  ]
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
 }

@@ -1,0 +1,36 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="AmarokIce, yumo2333; NeoForge 1.21.1 port by akiyono97-maker"
+logoFile="assets/minepulse/ICON.png"
+description='''一脉相挖 MinePulse Continued（NeoForge 1.21.1 移植版，fork 自 AmarokIce/MinePulse）
+
+站定一点开挖，每次击破都会把这条矿脉里最远的那块打掉、连掉落物一起飞向你——直到整条脉被挖空。
+树木同理：从最高处砍一刀，木头会从外向里断。
+
+本版改动：
+- 斜角识别：矿脉与树木的探寻范围由原来的 6 方向 / 18 邻扩展为完整 3×3×3（26 邻），斜对角相连的矿、斜上方的原木不会再断链。
+- 挖掘进度条：挖矿或砍树时，准星下方显示这条脉的进度与"剩余/总数"，松手约 1.5 秒后自动淡出。
+- 修复配置里关闭"连锁挖矿 / 连锁砍树"不生效的问题（现由客户端与服务端共同遵守）。'''
+
+[[dependencies.${mod_id}]]
+modId="neoforge"
+type="required"
+versionRange="[21.1,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="minecraft"
+type="required"
+versionRange="${minecraft_version_range}"
+ordering="NONE"
+side="BOTH"
+
+[[mixins]]
+config="minepulse.mixins.json"

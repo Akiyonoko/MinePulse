@@ -7,6 +7,6 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 
 @Mixin(DropExperienceBlock.class)
 public interface DropExperienceBlockMixin {
-    @Accessor
+    @Accessor("xpRange")
     IntProvider getXpRange();
 }

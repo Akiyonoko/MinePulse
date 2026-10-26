@@ -1,78 +1,99 @@
 package club.someoneice.minepulse.client;
 
-import club.someoneice.json.JSON;
-import club.someoneice.json.node.MapNode;
-import club.someoneice.json.processor.JsonBuilder;
-import com.google.common.io.Files;
-import net.fabricmc.loader.api.FabricLoader;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.mojang.logging.LogUtils;
+import net.neoforged.fml.loading.FMLPaths;
+import org.slf4j.Logger;
 
-import java.io.File;
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
-public class ClientConfig {
+/**
+ * 客户端配置：config/minepulse_client.json
+ */
+public final class ClientConfig {
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final String FILE_NAME = "minepulse_client.json";
+
+    /** 首次挖掘时弹一次"连锁方式"选择界面。 */
     public static boolean SHOULD_ASK = true;
+    /** 允许连锁挖矿。 */
     public static boolean ENABLE_MINE_ORE = true;
+    /** 允许连锁砍树。 */
     public static boolean ENABLE_MINE_TREE = true;
+    /** 反转 Shift 的作用（默认：不按 Shift 就连锁）。 */
     public static boolean REVERSAL = false;
+    /** 是否显示挖掘进度条。 */
+    public static boolean SHOW_PROGRESS = true;
 
-    static final File file = new File(FabricLoader.getInstance().getConfigDir().toFile(), "minepulse_client.json");
-
-    public static void init() {
-        boolean flag = !file.exists() || !file.isFile();
-        if (flag) {
-            writeIn(true);
-            return;
-        }
-
-        MapNode node = JSON.json.parse(file).asMapNodeOrEmpty();
-        if (node.isEmpty()) {
-            SHOULD_ASK = true;
-            return;
-        }
-
-        SHOULD_ASK = node.has("should_ask")
-                ? (boolean) node.get("should_ask").getObj()
-                : SHOULD_ASK;
-        ENABLE_MINE_ORE = node.has("enable_mine_ore")
-                ? (boolean) node.get("enable_mine_ore").getObj()
-                : ENABLE_MINE_TREE;
-        ENABLE_MINE_TREE = node.has("enable_mine_tree")
-                ? (boolean) node.get("enable_mine_tree").getObj()
-                : ENABLE_MINE_TREE;
-        REVERSAL = node.has("reversal")
-                ? (boolean) node.get("reversal").getObj()
-                : REVERSAL;
+    private ClientConfig() {
     }
 
-    public static void writeIn(boolean flag) {
-        REVERSAL = flag;
+    static {
+        load();
+    }
+
+    public static void load() {
+        Path file = FMLPaths.CONFIGDIR.get().resolve(FILE_NAME);
         try {
-            file.createNewFile();
-            MapNode node = new MapNode();
-            node.put("should_ask", SHOULD_ASK);
-            node.put("enable_mine_ore", ENABLE_MINE_ORE);
-            node.put("enable_mine_tree", ENABLE_MINE_TREE);
-            node.put("reversal", REVERSAL);
-            String out = JsonBuilder.prettyPrint(node);
-            Files.write(out.getBytes(), file);
-        } catch(IOException e) {
-            throw new RuntimeException("Cannot creat the new config for client!");
+            if (!Files.exists(file)) {
+                Files.createDirectories(file.getParent());
+                save();
+                return;
+            }
+            JsonObject root = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+            SHOULD_ASK = read(root, "should_ask", SHOULD_ASK);
+            ENABLE_MINE_ORE = read(root, "enable_mine_ore", ENABLE_MINE_ORE);
+            ENABLE_MINE_TREE = read(root, "enable_mine_tree", ENABLE_MINE_TREE);
+            REVERSAL = read(root, "reversal", REVERSAL);
+            SHOW_PROGRESS = read(root, "show_progress", SHOW_PROGRESS);
+        } catch (Exception e) {
+            LOGGER.error("[minepulse] 读取 {} 失败，使用默认设置", FILE_NAME, e);
         }
     }
 
-    public static void setShouldAsk(boolean shouldAsk) {
-        SHOULD_ASK = shouldAsk;
+    public static void save() {
+        Path file = FMLPaths.CONFIGDIR.get().resolve(FILE_NAME);
+        try {
+            Files.createDirectories(file.getParent());
+            JsonObject root = new JsonObject();
+            root.addProperty("should_ask", SHOULD_ASK);
+            root.addProperty("enable_mine_ore", ENABLE_MINE_ORE);
+            root.addProperty("enable_mine_tree", ENABLE_MINE_TREE);
+            root.addProperty("reversal", REVERSAL);
+            root.addProperty("show_progress", SHOW_PROGRESS);
+            StringBuilder out = new StringBuilder("{\n");
+            out.append("  \"should_ask\": ").append(SHOULD_ASK).append(",\n");
+            out.append("  \"enable_mine_ore\": ").append(ENABLE_MINE_ORE).append(",\n");
+            out.append("  \"enable_mine_tree\": ").append(ENABLE_MINE_TREE).append(",\n");
+            out.append("  \"reversal\": ").append(REVERSAL).append(",\n");
+            out.append("  \"show_progress\": ").append(SHOW_PROGRESS).append("\n}\n");
+            Files.writeString(file, out.toString(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            LOGGER.error("[minepulse] 写入 {} 失败", FILE_NAME, e);
+        }
     }
 
-    public static void setEnableMineOre(boolean enableMineOre) {
-        ENABLE_MINE_ORE = enableMineOre;
+    private static boolean read(JsonObject root, String key, boolean fallback) {
+        if (root.has(key) && !root.get(key).isJsonNull()) {
+            return root.get(key).getAsBoolean();
+        }
+        return fallback;
     }
 
-    public static void setEnableMineTree(boolean enableMineTree) {
-        ENABLE_MINE_TREE = enableMineTree;
+    /** 选"按住 Shift 时连锁"。 */
+    public static void useShiftMode() {
+        REVERSAL = true;
+        SHOULD_ASK = false;
+        save();
     }
 
-    public static void setReversal(boolean reversal) {
-        REVERSAL = reversal;
+    /** 选"不按 Shift 时连锁"（默认）。 */
+    public static void useDefaultMode() {
+        REVERSAL = false;
+        SHOULD_ASK = false;
+        save();
     }
 }

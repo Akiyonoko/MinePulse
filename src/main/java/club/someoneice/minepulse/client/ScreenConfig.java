@@ -1,88 +1,129 @@
 package club.someoneice.minepulse.client;
 
-import com.mojang.blaze3d.systems.RenderSystem;
+import club.someoneice.minepulse.net.PlayerStatePacket;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.PacketDistributor;
 
-import java.awt.*;
-
+/**
+ * 游戏内设置界面：连锁挖矿 / 连锁砍树 / 连锁触发方式 / 进度条。
+ * 入口在 模组列表 → Mine Pulse → Config，改动即时生效并写入 config/minepulse_client.json。
+ */
 public class ScreenConfig extends Screen {
-    private static final ResourceLocation RL = ResourceLocation.tryParse("minepulse:ui.png");
-    public ScreenConfig() {
-        super(Component.literal("Mine Pulse Config"));
+    private static final int MAX_WIDTH = 220;
+    private static final int ROW = 24;
+
+    private final Screen parent;
+
+    private Button oreButton;
+    private Button treeButton;
+    private Button triggerButton;
+    private Button barButton;
+
+    public ScreenConfig(Screen parent) {
+        super(Component.translatable("screen.minepulse.config_title"));
+        this.parent = parent;
     }
 
     @Override
-    public void render(GuiGraphics gg, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(gg, mouseX, mouseY, partialTick);
+    protected void init() {
+        int width = Math.min(MAX_WIDTH, this.width - 60);
+        int x = (this.width - width) / 2;
+        int y = this.height / 2 - 58;
 
-        final int baseX = this.width / 2;
-        final int baseY = this.height /2;
+        this.oreButton = this.addRenderableWidget(Button.builder(
+                        Component.translatable("screen.minepulse.opt.ore", onOff(ClientConfig.ENABLE_MINE_ORE)),
+                        button -> {
+                            ClientConfig.ENABLE_MINE_ORE = !ClientConfig.ENABLE_MINE_ORE;
+                            this.apply();
+                        })
+                .bounds(x, y, width, 20)
+                .build());
 
-        final int height = baseY - 176 / 2;
+        this.treeButton = this.addRenderableWidget(Button.builder(
+                        Component.translatable("screen.minepulse.opt.tree", onOff(ClientConfig.ENABLE_MINE_TREE)),
+                        button -> {
+                            ClientConfig.ENABLE_MINE_TREE = !ClientConfig.ENABLE_MINE_TREE;
+                            this.apply();
+                        })
+                .bounds(x, y + ROW, width, 20)
+                .build());
 
-        final int baseAX = baseX - 5;
-        final int rangeA = baseAX - 176;
+        this.triggerButton = this.addRenderableWidget(Button.builder(
+                        triggerLabel(),
+                        button -> {
+                            ClientConfig.REVERSAL = !ClientConfig.REVERSAL;
+                            this.apply();
+                        })
+                .bounds(x, y + ROW * 2, width, 20)
+                .build());
 
-        final int baseBX = baseX + 5;
-        final int rangeB = baseAX + 176;
+        this.barButton = this.addRenderableWidget(Button.builder(
+                        Component.translatable("screen.minepulse.opt.bar", onOff(ClientConfig.SHOW_PROGRESS)),
+                        button -> {
+                            ClientConfig.SHOW_PROGRESS = !ClientConfig.SHOW_PROGRESS;
+                            this.apply();
+                        })
+                .bounds(x, y + ROW * 3, width, 20)
+                .build());
 
-        final boolean flag = mouseY > height && mouseY < height + 176;
-        final boolean flagA = flag && mouseX > rangeA && mouseX < baseAX;
-        final boolean flagB = flag && mouseX > baseBX && mouseX < rangeB;
+        this.addRenderableWidget(Button.builder(
+                        Component.translatable("screen.minepulse.done"),
+                        button -> this.onClose())
+                .bounds(x, y + ROW * 4 + 8, width, 20)
+                .build());
+    }
 
-        RenderSystem.setShaderColor(1, 1, 1, 1);
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
+    private void apply() {
+        ClientConfig.save();
+        this.oreButton.setMessage(
+                Component.translatable("screen.minepulse.opt.ore", onOff(ClientConfig.ENABLE_MINE_ORE)));
+        this.treeButton.setMessage(
+                Component.translatable("screen.minepulse.opt.tree", onOff(ClientConfig.ENABLE_MINE_TREE)));
+        this.triggerButton.setMessage(triggerLabel());
+        this.barButton.setMessage(
+                Component.translatable("screen.minepulse.opt.bar", onOff(ClientConfig.SHOW_PROGRESS)));
+        this.syncToServer();
+    }
 
-        gg.drawCenteredString(this.minecraft.font, Component.translatable("screen.minepulse.choose"), baseX, height - 20, Color.WHITE.getRGB());
-        gg.drawCenteredString(this.minecraft.font, Component.translatable("screen.minepulse.config"), baseX, height - 10, Color.WHITE.getRGB());
-        gg.blit(RenderType::guiTextured, RL, rangeA, height, flagA ? 175 : 0, 0, 175, 175, 512, 512);
-        gg.blit(RenderType::guiTextured, RL, baseBX, height, flagB ? 175 : 0, 0, 175, 175, 512, 512);
-
-        gg.blit(RenderType::guiTextured, RL, rangeA + 48, height + 48, 0, 176, 80, 96, 512, 512);
-        gg.blit(RenderType::guiTextured, RL, baseBX + 48, height + 48, 81, 177, 80, 96, 512, 512);
-
-        if (flagA) {
-            gg.renderTooltip(this.minecraft.font, Component.translatable("screen.minepulse.pass"), mouseX, mouseY);
-        } else if (flagB) {
-            gg.renderTooltip(this.minecraft.font, Component.translatable("screen.minepulse.unpass"), mouseX, mouseY);
+    /** 开关变化立刻同步给服务端，不用等下一次开挖。 */
+    private void syncToServer() {
+        if (this.minecraft == null || this.minecraft.player == null) {
+            return;
         }
+        boolean active = ClientConfig.REVERSAL == this.minecraft.player.isShiftKeyDown();
+        PacketDistributor.sendToServer(new PlayerStatePacket(
+                ClientConfig.ENABLE_MINE_ORE, ClientConfig.ENABLE_MINE_TREE, active));
+    }
 
-        RenderSystem.disableBlend();
+    private static Component onOff(boolean value) {
+        return Component.translatable(value ? "screen.minepulse.on" : "screen.minepulse.off");
+    }
+
+    private static Component triggerLabel() {
+        return Component.translatable("screen.minepulse.opt.trigger",
+                Component.translatable(ClientConfig.REVERSAL
+                        ? "screen.minepulse.trigger.shift"
+                        : "screen.minepulse.trigger.direct"));
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        final int baseX = this.width / 2;
-        final int baseY = this.height /2;
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        super.render(graphics, mouseX, mouseY, partialTick);
+        int centerX = this.width / 2;
+        graphics.drawCenteredString(this.font, this.title, centerX, this.height / 2 - 84, 0xFFFFFFFF);
+        graphics.drawCenteredString(this.font, Component.translatable("screen.minepulse.config_hint"),
+                centerX, this.height / 2 + 46 + 22, 0xFFAAAAAA);
+    }
 
-        final int height = baseY - 176 / 2;
-
-        final int baseAX = baseX - 5;
-        final int rangeA = baseAX - 176;
-
-        final int baseBX = baseX + 5;
-        final int rangeB = baseAX + 176;
-
-        final boolean flag = mouseY > height && mouseY < height + 176;
-        final boolean flagA = flag && mouseX > rangeA && mouseX < baseAX;
-        final boolean flagB = flag && mouseX > baseBX && mouseX < rangeB;
-
-        if (flagA || flagB) {
-            ClientConfig.SHOULD_ASK = false;
-            ClientConfig.writeIn(flagA);
-            this.onClose();
-            return true;
+    @Override
+    public void onClose() {
+        if (this.minecraft != null) {
+            this.minecraft.setScreen(this.parent);
+        } else {
+            super.onClose();
         }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean shouldCloseOnEsc() {
-        return false;
     }
 }
